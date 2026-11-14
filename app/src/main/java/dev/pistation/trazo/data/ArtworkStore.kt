@@ -75,7 +75,7 @@ class ArtworkStore(private val context: Context) {
                     l.getString("name"), l.optBoolean("visible", true), l.optDouble("opacity", 1.0).toFloat(),
                     runCatching { BlendMode.valueOf(l.optString("blend", "NORMAL")) }.getOrDefault(BlendMode.NORMAL),
                     l.optBoolean("alphaLock"), l.optBoolean("clip"), l.optBoolean("reference"), l.optBoolean("collapsed"),
-                    l.optBoolean("maskEnabled", true)),
+                    l.optBoolean("maskEnabled", true), l.optInt("hold", 1)),
                     l.optBoolean("group"), l.optLong("parent"), l.optBoolean("mask"))
             },
             o.optLong("activeId"),
@@ -94,7 +94,7 @@ class ArtworkStore(private val context: Context) {
                     put(JSONObject().put("id", l.id).put("name", l.props.name).put("visible", l.props.visible)
                         .put("opacity", l.props.opacity.toDouble()).put("blend", l.props.blend.name)
                         .put("alphaLock", l.props.alphaLock).put("clip", l.props.clip).put("reference", l.props.reference)
-                        .put("collapsed", l.props.collapsed).put("maskEnabled", l.props.maskEnabled)
+                        .put("collapsed", l.props.collapsed).put("maskEnabled", l.props.maskEnabled).put("hold", l.props.hold)
                         .put("group", l.isGroup).put("parent", l.parent).put("mask", l.hasMask))
                 }
             })

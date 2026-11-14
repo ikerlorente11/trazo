@@ -36,6 +36,8 @@ data class LayerProps(
     /** Groups: folded in the layers panel. */
     val collapsed: Boolean = false,
     val maskEnabled: Boolean = true,
+    /** Animation: how many frames this frame stays on screen. */
+    val hold: Int = 1,
 )
 
 /**

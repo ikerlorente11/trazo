@@ -116,6 +116,7 @@ class EditorState(
     var animFgLast by mutableStateOf(false)
     var playing by mutableStateOf(false)
     private var playDir = 1
+    private var holdLeft = 0
 
     // 3D
     var show3d by mutableStateOf(initial.model != null)
@@ -570,6 +571,7 @@ class EditorState(
         override fun run() {
             if (!playing) return
             val n = frames.size
+            if (holdLeft > 1) { holdLeft--; main.postDelayed(this, 1000L / animFps.coerceIn(1, 60)); return }
             if (n > 0) {
                 var f = animFrame + playDir
                 when (animLoop) {
@@ -578,6 +580,7 @@ class EditorState(
                     2 -> if (f >= n) { playing = false; setAnim(); return }
                 }
                 animFrame = f.coerceIn(0, n - 1)
+                holdLeft = frames.getOrNull(animFrame)?.props?.hold ?: 1
                 val ff = animFrame
                 gl { it.anim.frame = ff }
             }
@@ -679,6 +682,7 @@ class EditorState(
         var mp4: Mp4Encoder? = null
         var gifEnc: GifEncoder? = null
         var gifOut: java.io.OutputStream? = null
+        val holds = frames.map { it.props.hold.coerceAtLeast(1) }
         fun step(i: Int) {
             if (i >= n) {
                 io.execute {
@@ -696,10 +700,10 @@ class EditorState(
                     runCatching {
                         if (gif) {
                             if (gifEnc == null) { gifOut = tmp.outputStream().buffered(); gifEnc = GifEncoder(gifOut!!, bmp.width, bmp.height, animLoop != 2) }
-                            gifEnc!!.add(store.onWhite(bmp).takeIf { bgVisible } ?: bmp, 1000 / fps)
+                            gifEnc!!.add(store.onWhite(bmp).takeIf { bgVisible } ?: bmp, 1000 * holds[i] / fps)
                         } else {
                             if (mp4 == null) mp4 = Mp4Encoder(tmp, bmp.width, bmp.height, fps)
-                            mp4!!.add(bmp)
+                            mp4!!.add(bmp, holds[i])
                         }
                     }
                     main.post { busy = "Exportando animación… ${i + 1}/$n"; step(i + 1) }

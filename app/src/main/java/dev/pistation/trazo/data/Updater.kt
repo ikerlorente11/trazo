@@ -20,7 +20,7 @@ class Updater(private val context: Context) {
     /** The latest release if it is newer than this build; null if not or on any error. Blocking. */
     fun check(force: Boolean = false): Release? {
         val now = System.currentTimeMillis()
-        if (!force && now - prefs.getLong("updateCheck", 0) < 3 * 3600_000L) {
+        if (!force && now - prefs.getLong("updateCheck", 0) < 15 * 60_000L) {
             return prefs.getString("updateCache", null)?.let { parse(it) }?.takeIf { newer(it.version) }
         }
         return runCatching {

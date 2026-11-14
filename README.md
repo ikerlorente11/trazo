@@ -74,7 +74,7 @@ girar 45°, ajustar al lienzo y píxeles nítidos (vecino más cercano).
 - texto (8 tipos de letra) e insertar fotos;
 - pantalla externa (Presentation).
 
-**Animación:** fotogramas (capas o grupos de primer nivel), papel cebolla, primer fotograma como fondo y último
+**Animación:** fotogramas (capas o grupos de primer nivel) con duración propia, papel cebolla, primer fotograma como fondo y último
 como primer plano. Reproducción en bucle, ida y vuelta o una vez. Exporta a GIF y MP4.
 
 **3D:** esfera, cubo, cilindro, toro, plano u OBJ con UV. Se pinta sobre el modelo (cámara orbital con dos dedos)
@@ -90,7 +90,7 @@ puede reproducir y exportar en MP4. Se pueden importar imágenes como lienzo nue
 - **Importar `.procreate` y `.brush`:** el formato está deducido de la documentación de la comunidad y no se ha
   probado con archivos reales. El descompresor LZO solo se ha probado con secuencias hechas a mano. Si algo
   sale mal, aquí sí tendría sentido usar REA (`morluto/rea`) con un archivo tuyo.
-- **Grupos:** sin anidar. Un fotograma de animación no tiene duración propia.
+- **Grupos:** sin anidar.
 - **3D:** el pincel trabaja en el espacio de la textura, así que el tamaño varía con la densidad de UV, y en las
   costuras el trazo salta.
 

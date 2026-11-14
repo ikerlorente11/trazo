@@ -349,6 +349,18 @@ private fun CurvesEditor(st: EditorState) {
 @Composable
 fun AnimationTimeline(st: EditorState) {
     val frames = st.frames
+    var holdFor by remember { mutableStateOf<dev.pistation.trazo.engine.LayerInfo?>(null) }
+    holdFor?.let { f ->
+        var hold by remember(f.id) { mutableFloatStateOf(f.props.hold.toFloat()) }
+        AlertDialog({ holdFor = null }, confirmButton = { TextButton({ st.setProps(f.id, f.props.copy(hold = hold.toInt())); holdFor = null }) { Text("Aceptar") } },
+            dismissButton = { TextButton({ holdFor = null }) { Text("Cancelar") } },
+            title = { Text("Fotograma") },
+            text = { Column {
+                LabeledSlider("Duración (fotogramas)", hold, 1f..12f, { "${it.toInt()}" }) { hold = it }
+                TextButton({ holdFor = null; st.duplicateLayer(f.id) }) { Text("Duplicar fotograma") }
+                TextButton({ holdFor = null; st.deleteLayer(f.id) }) { Text("Eliminar fotograma", color = Color(0xFFFF6B6B)) }
+            } })
+    }
     Row(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Ui.panel).border(1.dp, Ui.line, RoundedCornerShape(16.dp)).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         IconButton({ st.togglePlay() }) { Icon(if (st.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Reproducir", tint = Ui.text) }
@@ -357,11 +369,11 @@ fun AnimationTimeline(st: EditorState) {
                 val thumb = if (f.isGroup) st.layers.lastOrNull { it.parent == f.id }?.thumb else f.thumb
                 Column(horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (i == st.animFrame) Ui.accent.copy(alpha = 0.5f) else Color.Transparent)
-                        .clickable { if (st.playing) st.togglePlay(); st.goToFrame(i) }.padding(4.dp)) {
+                        .clickable { if (st.playing) st.togglePlay(); if (i == st.animFrame) holdFor = f else st.goToFrame(i) }.padding(4.dp)) {
                     Box(Modifier.size(64.dp, 44.dp).clip(RoundedCornerShape(4.dp)).background(Color.White)) {
                         thumb?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize()) }
                     }
-                    Text("${i + 1}", color = Ui.text, fontSize = 11.sp)
+                    Text("${i + 1}" + if (f.props.hold > 1) " ×${f.props.hold}" else "", color = Ui.text, fontSize = 11.sp)
                 }
             }
         }
