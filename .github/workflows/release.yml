@@ -1,0 +1,43 @@
+name: Release
+
+# Push a tag vX.Y.Z: builds the signed release APK and publishes it as a GitHub release.
+# Obtainium and the in-app updater both pick it up from there.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Signed release APK
+        env:
+          KEYSTORE_B64: ${{ secrets.TRAZO_KEYSTORE_B64 }}
+          TRAZO_KEYSTORE_PASSWORD: ${{ secrets.TRAZO_KEYSTORE_PASSWORD }}
+          TRAZO_KEY_ALIAS: trazo
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/trazo.jks"
+          export TRAZO_KEYSTORE="$RUNNER_TEMP/trazo.jks"
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease -PversionName="$VERSION"
+          cp app/build/outputs/apk/release/app-release.apk "trazo-$VERSION.apk"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then NOTES=$(git log --pretty='- %s' "$PREV..$GITHUB_REF_NAME"); else NOTES=$(git log --pretty='- %s'); fi
+          gh release create "$GITHUB_REF_NAME" "trazo-${GITHUB_REF_NAME#v}.apk" --title "Trazo ${GITHUB_REF_NAME#v}" --notes "$NOTES"
