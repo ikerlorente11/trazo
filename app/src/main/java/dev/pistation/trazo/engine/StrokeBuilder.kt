@@ -11,35 +11,56 @@ class StrokeBuilder(
     private val brush: Brush,
     private val baseSize: Float,
     private val r: Float, private val g: Float, private val b: Float,
-    private val pressureGamma: Float = 1f,
+    /** Global pressure curve (identity by default). */
+    private val pressureMap: (Float) -> Float = { it },
     seed: Int = 1,
+    /** Overrides the brush's StreamLine (QuickShape redraws with none). */
+    streamlineOverride: Float? = null,
 ) {
     /** Stamps not yet drawn: x, y, size, angle, r, g, b, alpha. */
     val pending = FloatArrayList()
+    /** Input points as received: x, y, pressure. */
+    val raw = FloatArrayList()
     var minX = Float.MAX_VALUE; private set
     var minY = Float.MAX_VALUE; private set
     var maxX = -Float.MAX_VALUE; private set
     var maxY = -Float.MAX_VALUE; private set
     val isEmpty get() = minX > maxX
 
+    /** Last emitted stamp, for drawing the predicted continuation. */
+    var lastX = 0f; private set
+    var lastY = 0f; private set
+    var lastSize = 0f; private set
+    var lastAngle = 0f; private set
+    var lastAlpha = 0f; private set
+
+    private val streamline = (streamlineOverride ?: brush.streamline).coerceIn(0f, 1f)
     private val rnd = Random(seed)
     private var started = false
     private var sx = 0f; private var sy = 0f; private var sp = 0f   // smoothed
-    private var rawX = 0f; private var rawY = 0f; private var rawP = 0f
+    private var rawX = 0f; private var rawY = 0f
     private var carry = 0f
     private var travelled = 0f
     private var dirAngle = 0f
 
     fun add(x: Float, y: Float, pressure: Float) {
-        rawX = x; rawY = y; rawP = pressure
+        raw.add(x, y, pressure)
+        rawX = x; rawY = y
         if (!started) {
             started = true
             sx = x; sy = y; sp = pressure
             emit(x, y, pressure)
             return
         }
-        val k = 1f - brush.streamline.coerceIn(0f, 1f) * 0.9f
+        val k = 1f - streamline * 0.9f
         step(sx + (x - sx) * k, sy + (y - sy) * k, sp + (pressure - sp) * min(1f, k * 1.5f))
+    }
+
+    /** Moves without drawing in between (3D painting across a UV seam). */
+    fun jump(x: Float, y: Float, pressure: Float) {
+        raw.add(x, y, pressure)
+        rawX = x; rawY = y; sx = x; sy = y; sp = pressure; carry = 0f
+        emit(x, y, pressure)
     }
 
     /** Pulls the smoothed point onto the pen's last position. */
@@ -64,7 +85,7 @@ class StrokeBuilder(
             val p = sp + (np - sp) * t
             val gap = max(0.5f, brush.spacing * sizeAt(p))
             val need = gap - pos
-            if (need > d * (1 - t)) { carry = pos + d * (1 - t); break }
+            if (need > d * (1 - t)) { carry = pos + d * (1 - t); travelled += d * (1 - t); break }
             t += need / d
             pos = 0f
             travelled += need
@@ -73,7 +94,7 @@ class StrokeBuilder(
         sx = nx; sy = ny; sp = np
     }
 
-    private fun curve(p: Float) = p.coerceIn(0f, 1f).pow(brush.pressureGamma * pressureGamma)
+    private fun curve(p: Float) = pressureMap(p.coerceIn(0f, 1f)).coerceIn(0f, 1f).pow(brush.pressureGamma)
 
     private fun sizeAt(p: Float): Float {
         val c = curve(p)
@@ -98,7 +119,16 @@ class StrokeBuilder(
             var ang = brush.angle * PI.toFloat() / 180f
             if (brush.rotateWithStroke) ang += dirAngle
             if (brush.rotationJitter > 0f) ang += (rnd.nextFloat() - 0.5f) * 2 * PI.toFloat() * brush.rotationJitter
-            pending.add(px, py, size, ang, r, g, b, alpha)
+            var cr = r; var cg = g; var cb = b
+            if (brush.hueJitter > 0f) {
+                val hsv = FloatArray(3)
+                android.graphics.Color.RGBToHSV((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt(), hsv)
+                hsv[0] = (hsv[0] + (rnd.nextFloat() - 0.5f) * 360f * brush.hueJitter + 360f) % 360f
+                val c = android.graphics.Color.HSVToColor(hsv)
+                cr = ((c shr 16) and 255) / 255f; cg = ((c shr 8) and 255) / 255f; cb = (c and 255) / 255f
+            }
+            pending.add(px, py, size, ang, cr, cg, cb, alpha)
+            lastX = px; lastY = py; lastSize = size; lastAngle = ang; lastAlpha = alpha
             val h = size * 0.75f
             minX = min(minX, px - h); minY = min(minY, py - h)
             maxX = max(maxX, px + h); maxY = max(maxY, py + h)

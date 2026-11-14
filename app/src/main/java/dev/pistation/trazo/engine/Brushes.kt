@@ -40,7 +40,17 @@ data class Brush(
     val taperStart: Float = 0f,
     val smudge: Float = 0.6f,
     val count: Int = 1,
+    /** Wet mix: 0 = plain paint; above 0 the brush picks up and mixes the paint under it. */
+    val wet: Float = 0f,
+    /** Imported shape / grain images (files in the app's brushes folder). */
+    val shapeImage: String? = null,
+    val grainImage: String? = null,
+    /** Made or imported by the user (kept in the brush store). */
+    val custom: Boolean = false,
 ) {
+    val shapeKey get() = shapeImage ?: shape.name
+    val grainKey get() = grainImage ?: grain.name
+
     /** Size in canvas pixels for the sidebar's 0..1 slider. */
     fun sizeFor(slider: Float) = sizeMin + (sizeMax - sizeMin) * slider * slider
 }
@@ -61,6 +71,8 @@ object BrushLibrary {
         Brush("gouache", "Gouache", "Pintura", Shape.BRISTLE, Grain.CANVAS, 200f, 0.35f, 0.04f, 6f, 220f, 0.4f, 0.6f, 0.4f, 1f, 0.9f, 0.15f, rotateWithStroke = true),
         Brush("oil", "Óleo", "Pintura", Shape.BRISTLE, Grain.CANVAS, 260f, 0.5f, 0.03f, 8f, 260f, 0.5f, 0.5f, 0.3f, 1f, 1f, 0.1f, rotateWithStroke = true, roundness = 0.7f),
         Brush("flatbrush", "Pincel plano", "Pintura", Shape.FLAT, spacing = 0.03f, sizeMin = 6f, sizeMax = 220f, minSizeFraction = 0.6f, pressureSize = 0.4f, pressureOpacity = 0.6f, rotateWithStroke = true, roundness = 0.35f),
+        Brush("wetoil", "Óleo húmedo", "Pintura", Shape.BRISTLE, Grain.CANVAS, 260f, 0.3f, 0.03f, 8f, 260f, 0.6f, 0.4f, 0.2f, 1f, 1f, 0.1f, rotateWithStroke = true, roundness = 0.75f, wet = 0.55f, smudge = 0.7f),
+        Brush("wetwatercolor", "Acuarela húmeda", "Pintura", Shape.ROUND_SOFT, Grain.PAPER, 300f, 0.4f, 0.04f, 10f, 300f, 0.6f, 0.3f, 0.5f, 1f, 0.6f, 0.2f, wet = 0.75f, smudge = 0.45f),
         Brush("watercolor", "Acuarela", "Pintura", Shape.ROUND_SOFT, Grain.PAPER, 300f, 0.5f, 0.05f, 10f, 300f, 0.6f, 0.4f, 0.6f, 1f, 0.25f, 0.2f),
         // Aerógrafo
         Brush("softair", "Aerógrafo suave", "Aerógrafo", Shape.ROUND_SOFT, spacing = 0.04f, sizeMin = 10f, sizeMax = 800f, minSizeFraction = 1f, pressureSize = 0f, pressureOpacity = 1f, flow = 0.12f, streamline = 0.1f),
@@ -76,13 +88,18 @@ object BrushLibrary {
         Brush("chisel", "Punta biselada", "Caligrafía", Shape.FLAT, spacing = 0.02f, sizeMin = 4f, sizeMax = 100f, minSizeFraction = 0.9f, pressureSize = 0.1f, streamline = 0.5f, angle = 45f, roundness = 0.18f),
         // Texturas y efectos
         Brush("splatter", "Salpicadura", "Texturas", Shape.SPRAY, spacing = 0.5f, sizeMin = 10f, sizeMax = 400f, minSizeFraction = 0.5f, pressureSize = 0.5f, scatter = 0.8f, sizeJitter = 0.6f, rotationJitter = 1f, opacityJitter = 0.3f, streamline = 0f),
+        Brush("confetti", "Confeti de color", "Texturas", Shape.ROUND_HARD, spacing = 0.7f, sizeMin = 3f, sizeMax = 60f, minSizeFraction = 0.5f, scatter = 1.2f, sizeJitter = 0.5f, hueJitter = 0.25f, streamline = 0f),
         Brush("stipple", "Punteado", "Texturas", Shape.ROUND_HARD, spacing = 0.9f, sizeMin = 2f, sizeMax = 40f, minSizeFraction = 0.4f, scatter = 1.5f, sizeJitter = 0.7f, count = 3, streamline = 0f),
         Brush("noise", "Ruido", "Texturas", Shape.ROUND_SOFT, Grain.NOISE, 60f, 1f, 0.06f, 20f, 600f, 1f, 0f, 1f, 1f, 0.3f, 0.1f),
         Brush("blender", "Difuminador", "Texturas", Shape.ROUND_SOFT, spacing = 0.06f, sizeMin = 10f, sizeMax = 400f, minSizeFraction = 0.6f, pressureSize = 0.4f, pressureOpacity = 0f, smudge = 0.8f),
     )
 
-    fun byId(id: String) = all.firstOrNull { it.id == id } ?: all[0]
-    val categories: List<String> get() = all.map { it.category }.distinct()
+    /** User brushes (imported or duplicated), set by the brush store. */
+    @Volatile var custom: List<Brush> = emptyList()
+    val everything: List<Brush> get() = all + custom
+
+    fun byId(id: String) = everything.firstOrNull { it.id == id } ?: all[0]
+    val categories: List<String> get() = everything.map { it.category }.distinct()
 }
 
 /** Procedural brush shapes (256²) and tileable grains (512²), single channel. */

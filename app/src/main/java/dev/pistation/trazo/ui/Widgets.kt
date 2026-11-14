@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 object Ui {
     val bg = Color(0xFF1C1C1E)
     val canvasBg = Color(0xFF2A2A2E)
-    val panel = Color(0xF2252528)
+    val panel = Color(0xFF252528)
     val panel2 = Color(0xFF323236)
     val line = Color(0x33FFFFFF)
     val text = Color(0xFFF2F2F2)

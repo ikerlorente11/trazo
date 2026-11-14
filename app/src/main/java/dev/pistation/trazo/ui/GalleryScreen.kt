@@ -26,6 +26,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.pistation.trazo.data.ArtworkMeta
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.ViewInAr
+import androidx.compose.ui.window.Dialog
 import dev.pistation.trazo.data.ArtworkStore
 import dev.pistation.trazo.data.Release
 import dev.pistation.trazo.data.Updater
@@ -57,13 +63,48 @@ fun GalleryScreen(store: ArtworkStore, onOpen: (ArtworkMeta) -> Unit) {
     var menu by remember { mutableStateOf<ArtworkMeta?>(null) }
     var renaming by remember { mutableStateOf<ArtworkMeta?>(null) }
     var deleting by remember { mutableStateOf<ArtworkMeta?>(null) }
+    var creating3d by remember { mutableStateOf(false) }
+    var importMenu by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     fun refresh() { items = store.list() }
+    val importProcreate = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            busy = "Importando…"
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { GalleryImport.procreate(ctx, store, uri) } }
+                busy = null; refresh()
+                r.onFailure { android.widget.Toast.makeText(ctx, "No se pudo importar: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+    val importImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            busy = "Importando…"
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { GalleryImport.image(ctx, store, uri) } }
+                busy = null; refresh()
+                r.onSuccess { onOpen(it) }.onFailure { android.widget.Toast.makeText(ctx, "No se pudo importar: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
     val fmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale("es", "ES")) }
 
     Column(Modifier.fillMaxSize().background(Ui.bg).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Galería", color = Ui.text, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             Text("  v${Updater.current}", color = Ui.dim, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Box {
+                TextButton({ importMenu = true }) { Icon(Icons.Filled.FileDownload, null); Spacer(Modifier.width(4.dp)); Text("Importar") }
+                DropdownMenu(importMenu, { importMenu = false }) {
+                    DropdownMenuItem({ Text("Archivo de Procreate (.procreate) · experimental") }, { importMenu = false; importProcreate.launch(arrayOf("*/*")) })
+                    DropdownMenuItem({ Text("Imagen como lienzo nuevo") }, { importMenu = false; importImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            TextButton({ creating3d = true }) { Icon(Icons.Filled.ViewInAr, null); Spacer(Modifier.width(4.dp)); Text("Nuevo 3D") }
+            Spacer(Modifier.width(6.dp))
             FilledTonalButton({ creating = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text("Nuevo lienzo") }
         }
         UpdateBanner()
@@ -88,7 +129,7 @@ fun GalleryScreen(store: ArtworkStore, onOpen: (ArtworkMeta) -> Unit) {
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(m.name, color = Ui.text, fontSize = 15.sp, maxLines = 1)
-                    Text("${m.width}×${m.height} · ${fmt.format(Date(m.modified))}", color = Ui.dim, fontSize = 12.sp)
+                    Text((if (m.model != null) "3D · " else "") + "${m.width}×${m.height} · ${fmt.format(Date(m.modified))}", color = Ui.dim, fontSize = 12.sp)
                 }
             }
         }
@@ -97,6 +138,14 @@ fun GalleryScreen(store: ArtworkStore, onOpen: (ArtworkMeta) -> Unit) {
     if (creating) NewCanvasDialog({ creating = false }) { name, w, h ->
         creating = false
         onOpen(store.create(name, w, h))
+    }
+    if (creating3d) New3dDialog(store, { creating3d = false }) { creating3d = false; onOpen(it) }
+    busy?.let {
+        Dialog({}) {
+            Column(Modifier.clip(RoundedCornerShape(16.dp)).background(Ui.panel).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(); Spacer(Modifier.height(10.dp)); Text(it, color = Ui.text)
+            }
+        }
     }
     renaming?.let { m ->
         var name by remember(m.id) { mutableStateOf(m.name) }
@@ -180,4 +229,76 @@ private fun UpdateBanner() {
         }) { Text("Actualizar") }
     }
     Spacer(Modifier.height(8.dp))
+}
+
+/** New 3D painting: a built-in mesh or an OBJ with UVs; the canvas is its texture. */
+@Composable
+private fun New3dDialog(store: ArtworkStore, onDismiss: () -> Unit, onCreated: (ArtworkMeta) -> Unit) {
+    var model by remember { mutableStateOf("sphere") }
+    var size by remember { mutableIntStateOf(2048) }
+    var obj by remember { mutableStateOf<String?>(null) }
+    var objName by remember { mutableStateOf("") }
+    val ctx = LocalContext.current
+    val pickObj = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            val ok = text != null && runCatching { dev.pistation.trazo.engine.Meshes.parseObj(text) }.isSuccess
+            if (ok) { obj = text; objName = uri.lastPathSegment?.substringAfterLast('/') ?: "modelo.obj"; model = "obj" }
+            else android.widget.Toast.makeText(ctx, "El OBJ no se puede usar (necesita coordenadas UV)", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    AlertDialog(onDismiss,
+        confirmButton = { TextButton({ onCreated(store.create(if (model == "obj") objName.substringBeforeLast('.') else "Modelo 3D", size, size, model, obj)) }) { Text("Crear") } },
+        dismissButton = { TextButton(onDismiss) { Text("Cancelar") } },
+        title = { Text("Nuevo lienzo 3D") },
+        text = {
+            Column {
+                Text("Pinta directamente sobre el modelo; el lienzo es su textura.", color = Ui.dim, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                dev.pistation.trazo.engine.Meshes.builtIn.forEach { (id, label) ->
+                    Row(Modifier.fillMaxWidth().clickable { model = id }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(model == id, { model = id }); Text(label)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().clickable { pickObj.launch(arrayOf("*/*")) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(model == "obj", { pickObj.launch(arrayOf("*/*")) }); Text(if (obj != null) "OBJ: $objName" else "Importar un modelo OBJ…")
+                }
+                Text("Textura", color = Ui.text, modifier = Modifier.padding(top = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(1024, 2048, 4096).forEach { s -> FilterChip(size == s, { size = s }, label = { Text("$s") }) }
+                }
+            }
+        })
+}
+
+/** Imports that create new artworks. */
+object GalleryImport {
+    fun procreate(ctx: android.content.Context, store: ArtworkStore, uri: android.net.Uri): ArtworkMeta {
+        val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Importado"
+        val doc = ctx.contentResolver.openInputStream(uri)!!.use { dev.pistation.trazo.data.ProcreateImporter.read(it, name) }
+        require(doc.width in 1..8192 && doc.height in 1..8192) { "Tamaño no válido" }
+        val m = store.create(doc.name, doc.width, doc.height)
+        val layers = doc.layers.mapIndexed { i, l -> dev.pistation.trazo.data.StoredLayer(i + 1L, l.props) }
+        val px = doc.layers.mapIndexed { i, l -> "L${i + 1}" to l.pixels }.toMap()
+        val meta = m.copy(layers = layers, activeId = layers.last().id, bgColor = doc.bgColor, bgVisible = doc.bgVisible)
+        store.save(meta, px, null)
+        return store.readMeta(m.id)
+    }
+
+    fun image(ctx: android.content.Context, store: ArtworkStore, uri: android.net.Uri): ArtworkMeta {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+        var sample = 1
+        while (opts.outWidth / sample > 4096 || opts.outHeight / sample > 4096) sample *= 2
+        val bmp0 = ctx.contentResolver.openInputStream(uri)!!.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }
+            ?: error("No es una imagen")
+        val bmp = if (bmp0.config == android.graphics.Bitmap.Config.ARGB_8888) bmp0 else bmp0.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+        val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Imagen"
+        val m = store.create(name, bmp.width, bmp.height)
+        val buf = java.nio.ByteBuffer.allocateDirect(bmp.width * bmp.height * 4).order(java.nio.ByteOrder.nativeOrder())
+        bmp.copyPixelsToBuffer(buf); buf.position(0)
+        val meta = m.copy(layers = listOf(dev.pistation.trazo.data.StoredLayer(1, dev.pistation.trazo.engine.LayerProps("Imagen"))), activeId = 1)
+        store.save(meta, mapOf("L1" to buf), bmp)
+        return store.readMeta(m.id)
+    }
 }
